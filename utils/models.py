@@ -172,29 +172,63 @@ class AttentionPooling(nn.Module):
     """
     def __init__(self, embed_dim, attn_dim=None, sensor_dropout=0.0):
         super().__init__()
-        # if attn_dim not specified, default to embed_dim
         attn_dim = attn_dim or embed_dim
         self.W = nn.Linear(embed_dim, attn_dim)
         self.v = nn.Linear(attn_dim, 1, bias=False)
-        # dropout module that will zero entire sensor embeddings
-        # implemented via dropout on the sensor dimension
         self.sensor_dropout_p = sensor_dropout
 
     def forward(self, local_emb):
         # local_emb: (B, N_s, embed_dim)
         B, N_s, D = local_emb.shape
         if self.training and self.sensor_dropout_p > 0:
-            # create a dropout mask for sensors: shape (B, N_s, 1)
             mask = local_emb.new_empty(B, N_s, 1).bernoulli_(1 - self.sensor_dropout_p)
             mask = mask / (1 - self.sensor_dropout_p)
             local_emb = local_emb * mask
-        # compute unnormalized attention scores
         e = torch.tanh(self.W(local_emb))        # (B, N_s, attn_dim)
         e = self.v(e).squeeze(-1)                # (B, N_s)
         alpha = F.softmax(e, dim=1)              # (B, N_s)
-        # weighted sum of embeddings
         global_emb = torch.einsum('bn,bnd->bd', alpha, local_emb)
         return global_emb, alpha
+
+class GraphSensorGNN(nn.Module):
+    """
+    Simple GNN that refines local embeddings based on sensor coordinates.
+    """
+    def __init__(self, coord_dim, embed_dim, num_layers=1, sigma=1.0):
+        super().__init__()
+        self.num_layers = num_layers
+        self.sigma = sigma
+        self.msg_mlp = nn.Sequential(
+            nn.Linear(2*embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
+        self.update_mlp = nn.Sequential(
+            nn.Linear(embed_dim + coord_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
+
+    def forward(self, local_emb, coords):
+        # local_emb: (B, N_s, D), coords: (B, N_s, coord_dim)
+        B, N_s, D = local_emb.shape
+        for _ in range(self.num_layers):
+            # compute pairwise distances
+            diff = coords.unsqueeze(2) - coords.unsqueeze(1)  # (B, N_s, N_s, coord_dim)
+            dist2 = (diff**2).sum(-1)                          # (B, N_s, N_s)
+            A = torch.exp(-dist2 / (2*self.sigma**2))         # (B, N_s, N_s)
+            # message computation
+            h_i = local_emb.unsqueeze(2).expand(B, N_s, N_s, D)
+            h_j = local_emb.unsqueeze(1).expand(B, N_s, N_s, D)
+            msgs = torch.cat([h_i, h_j], dim=-1)              # (B,N_s,N_s,2D)
+            msgs = self.msg_mlp(msgs)                         # (B,N_s,N_s,D)
+            # aggregate weighted by A
+            agg = torch.einsum('bij,bijd->bid', A, msgs)      # (B, N_s, D)
+            # update embeddings via coords and aggregated messages
+            update_input = torch.cat([agg, coords], dim=-1)   # (B, N_s, D+coord_dim)
+            delta = self.update_mlp(update_input)             # (B, N_s, D)
+            local_emb = local_emb + delta                     # residual update
+        return local_emb
 
 class SHREDagnosticAttention(nn.Module):
     def __init__(self,
@@ -206,73 +240,159 @@ class SHREDagnosticAttention(nn.Module):
                  decoder_sizes=None,
                  dropout=0.0,
                  attn_dim=None,
-                 sensor_dropout=0.0):
-        """
-        SHRED model with sensor-agnostic encoding and attention-based pooling with sensor dropout:
-        - Uses per-sensor LSTM + coord MLP + local embedding
-        - Aggregates local embeddings via attention instead of mean pooling
-        - Drops entire sensor embeddings during training for robustness
-        """
+                 sensor_dropout=0.0,
+                 use_gnn=False,
+                 gnn_layers=1,
+                 gnn_sigma=1.0,
+                 use_attention=True):
         super().__init__()
-        # Per-sensor temporal encoder
+        self.use_gnn = use_gnn
+        self.use_attention = use_attention
+        # per-sensor LSTM
         self.per_sensor_lstm = nn.LSTM(input_size=1,
                                        hidden_size=hidden_size,
                                        num_layers=lstm_layers,
                                        batch_first=True)
-        # MLP for sensor coordinates
+        # coord MLP
         self.coord_mlp = nn.Sequential(
             nn.Linear(coord_dim, hidden_size),
             nn.ReLU(inplace=True),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(inplace=True)
         )
-        # Local embedding
+        # local embedding MLP
         self.local_mlp = nn.Sequential(
             nn.Linear(2 * hidden_size, latent_dim),
             nn.ReLU(inplace=True)
         )
-        # Attention pooling over sensors with dropout
-        self.attn_pool = AttentionPooling(latent_dim, attn_dim, sensor_dropout=sensor_dropout)
-        # Direct POD-coeff decoder head
+        # optional GNN
+        if use_gnn:
+            self.gnn = GraphSensorGNN(coord_dim=coord_dim,
+                                      embed_dim=latent_dim,
+                                      num_layers=gnn_layers,
+                                      sigma=gnn_sigma)
+        # pooling
+        if use_attention:
+            self.attn_pool = AttentionPooling(latent_dim, attn_dim, sensor_dropout=sensor_dropout)
+        # decoder
         mlp_out = []
         in_dim = latent_dim
-        for hidden in (decoder_sizes or [latent_dim]):
-            mlp_out.append(nn.Linear(in_dim, hidden))
-            mlp_out.append(nn.ReLU(inplace=True))
-            if dropout > 0:
-                mlp_out.append(nn.Dropout(dropout))
-            in_dim = hidden
+        for h in (decoder_sizes or [latent_dim]):
+            mlp_out.append(nn.Linear(in_dim, h)); mlp_out.append(nn.ReLU(inplace=True))
+            if dropout>0: mlp_out.append(nn.Dropout(dropout))
+            in_dim = h
         mlp_out.append(nn.Linear(in_dim, output_size))
         self.coef_decoder = nn.Sequential(*mlp_out)
 
     def forward(self, sensor_hist, sensor_coords, query_coords=None):
-        # sensor_hist: (B, N_s, L)
         B, N_s, L = sensor_hist.size()
-        # 1) LSTM over temporal history
+        # 1) LSTM
         hist = sensor_hist.view(B * N_s, L, 1)
         _, (h_n, _) = self.per_sensor_lstm(hist)
-        h_seq = h_n[-1].view(B, N_s, -1)  # (B, N_s, hidden_size)
-        # 2) Coord embedding
-        coord_emb = self.coord_mlp(sensor_coords.view(B * N_s, -1))
-        coord_emb = coord_emb.view(B, N_s, -1)
-        # 3) Local embedding
-        local = torch.cat([h_seq, coord_emb], dim=-1)  # (B, N_s, 2*hidden)
-        local_emb = self.local_mlp(local)               # (B, N_s, latent_dim)
-        # 4) Attention pooling with sensor dropout
-        global_h, attn_weights = self.attn_pool(local_emb)
-        # 5) Decode POD coefficients
-        output = self.coef_decoder(global_h)            # (B, output_size)
-        return output, attn_weights  # return weights if needed for analysis
-    
+        h_seq = h_n[-1].view(B, N_s, -1)
+        # 2) coord embedding
+        coord_emb = self.coord_mlp(sensor_coords.view(B*N_s, -1)).view(B, N_s, -1)
+        # 3) local embedding
+        local = torch.cat([h_seq, coord_emb], dim=-1)
+        local_emb = self.local_mlp(local)
+        # 4) optional GNN refinement
+        if self.use_gnn:
+            local_emb = self.gnn(local_emb, sensor_coords)
+        # 5) pooling
+        if self.use_attention:
+            global_h, attn_weights = self.attn_pool(local_emb)
+        else:
+            attn_weights = None
+            global_h = local_emb.mean(dim=1)
+        # 6) decode
+        output = self.coef_decoder(global_h)
+        return output, attn_weights
+
     def freeze(self):
         self.eval()
-        for param in self.parameters():
-            param.requires_grad = False
+        for p in self.parameters(): p.requires_grad=False
 
     def unfreeze(self):
         self.train()
-        for param in self.parameters():
-            param.requires_grad = True
+        for p in self.parameters(): p.requires_grad=True
+
+# class SHREDagnosticAttention(nn.Module):
+#     def __init__(self,
+#                  coord_dim,
+#                  latent_dim,
+#                  output_size,
+#                  hidden_size=64,
+#                  lstm_layers=2,
+#                  decoder_sizes=None,
+#                  dropout=0.0,
+#                  attn_dim=None,
+#                  sensor_dropout=0.0):
+#         """
+#         SHRED model with sensor-agnostic encoding and attention-based pooling with sensor dropout:
+#         - Uses per-sensor LSTM + coord MLP + local embedding
+#         - Aggregates local embeddings via attention instead of mean pooling
+#         - Drops entire sensor embeddings during training for robustness
+#         """
+#         super().__init__()
+#         # Per-sensor temporal encoder
+#         self.per_sensor_lstm = nn.LSTM(input_size=1,
+#                                        hidden_size=hidden_size,
+#                                        num_layers=lstm_layers,
+#                                        batch_first=True)
+#         # MLP for sensor coordinates
+#         self.coord_mlp = nn.Sequential(
+#             nn.Linear(coord_dim, hidden_size),
+#             nn.ReLU(inplace=True),
+#             nn.Linear(hidden_size, hidden_size),
+#             nn.ReLU(inplace=True)
+#         )
+#         # Local embedding
+#         self.local_mlp = nn.Sequential(
+#             nn.Linear(2 * hidden_size, latent_dim),
+#             nn.ReLU(inplace=True)
+#         )
+#         # Attention pooling over sensors with dropout
+#         self.attn_pool = AttentionPooling(latent_dim, attn_dim, sensor_dropout=sensor_dropout)
+#         # Direct POD-coeff decoder head
+#         mlp_out = []
+#         in_dim = latent_dim
+#         for hidden in (decoder_sizes or [latent_dim]):
+#             mlp_out.append(nn.Linear(in_dim, hidden))
+#             mlp_out.append(nn.ReLU(inplace=True))
+#             if dropout > 0:
+#                 mlp_out.append(nn.Dropout(dropout))
+#             in_dim = hidden
+#         mlp_out.append(nn.Linear(in_dim, output_size))
+#         self.coef_decoder = nn.Sequential(*mlp_out)
+
+#     def forward(self, sensor_hist, sensor_coords, query_coords=None):
+#         # sensor_hist: (B, N_s, L)
+#         B, N_s, L = sensor_hist.size()
+#         # 1) LSTM over temporal history
+#         hist = sensor_hist.view(B * N_s, L, 1)
+#         _, (h_n, _) = self.per_sensor_lstm(hist)
+#         h_seq = h_n[-1].view(B, N_s, -1)  # (B, N_s, hidden_size)
+#         # 2) Coord embedding
+#         coord_emb = self.coord_mlp(sensor_coords.view(B * N_s, -1))
+#         coord_emb = coord_emb.view(B, N_s, -1)
+#         # 3) Local embedding
+#         local = torch.cat([h_seq, coord_emb], dim=-1)  # (B, N_s, 2*hidden)
+#         local_emb = self.local_mlp(local)               # (B, N_s, latent_dim)
+#         # 4) Attention pooling with sensor dropout
+#         global_h, attn_weights = self.attn_pool(local_emb)
+#         # 5) Decode POD coefficients
+#         output = self.coef_decoder(global_h)            # (B, output_size)
+#         return output, attn_weights  # return weights if needed for analysis
+    
+#     def freeze(self):
+#         self.eval()
+#         for param in self.parameters():
+#             param.requires_grad = False
+
+#     def unfreeze(self):
+#         self.train()
+#         for param in self.parameters():
+#             param.requires_grad = True
 
 def fit(model, train_dataset, valid_dataset, batch_size = 64, epochs = 4000, optim = torch.optim.Adam, lr = 1e-3, loss_fun = mse, loss_output = mre, formatter = num2p, verbose = False, patience = 5):
     ''' 
