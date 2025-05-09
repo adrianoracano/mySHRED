@@ -941,7 +941,7 @@ airfoil_indices_list = []
 
 os.makedirs("snapshots_pinball", exist_ok=True)
 
-for i in range(20):
+for i in range(ntrajectories):
 
     if rank==0:
         print(f"Generating snapshot n.{i}...")
@@ -956,21 +956,21 @@ for i in range(20):
         print(f"Re: {Re:.1f}")
 
 
-    [U_np, p_np] = solve(params, mesh, ft, dt, timesteps+1, U_max, rho_,
-                         mesh_type="rectangle",
-                         save_to_np_every_steps=save_to_np_every_steps,
-                         bcwalls="freestream", backflow=False, direct_solver=False, monitor_solvers=False, monitor_time=False)
+    # [U_np, p_np] = solve(params, mesh, ft, dt, timesteps+1, U_max, rho_,
+    #                      mesh_type="rectangle",
+    #                      save_to_np_every_steps=save_to_np_every_steps,
+    #                      bcwalls="freestream", backflow=False, direct_solver=False, monitor_solvers=False, monitor_time=False)
 
-    if rank==0:
-        U_np = U_np.reshape((U_np.shape[0], -1, 2))
-        u_np, v_np = U_np[:,:,0], U_np[:,:,1]
+    # if rank==0:
+    #     U_np = U_np.reshape((U_np.shape[0], -1, 2))
+    #     u_np, v_np = U_np[:,:,0], U_np[:,:,1]
 
-        U[i] = u_np
-        V[i] = v_np
-        P[i] = p_np
-        np.savez_compressed(f"snapshots_pinball/snapshot_{i}.npz", u_np = u_np, v_np = v_np, p_np = p_np, params = params)
+    #     U[i] = u_np
+    #     V[i] = v_np
+    #     P[i] = p_np
+    #     np.savez_compressed(f"snapshots_pinball/snapshot_{i}.npz", u_np = u_np, v_np = v_np, p_np = p_np, params = params)
 
-    clc(wait = True)
+    # clc(wait = True)
 
 print("Snapshots generated!")
 
@@ -993,162 +993,164 @@ if rank==0:
     # Ora coords_global ha shape (11289,2)
     x = coords[:,0]
     y = coords[:,1]
+    np.save("snapshots_pinball/x.npy", x)
+    np.save("snapshots_pinball/y.npy", y)
     triang = tri.Triangulation(x, y)
 
-    # Calcola la magnitudine di u per tutti i timestep e determina min e max globali
-    # u_mag = np.sqrt(u**2 + v**2)
-    u_min, u_max = u_np.min(), u_np[:50].max()
-    v_min, v_max = v_np.min(), v_np[:50].max()
-    p_min, p_max = p_np[1:85 ,:].min(), p_np[1:85 ,:].max()
+    # # Calcola la magnitudine di u per tutti i timestep e determina min e max globali
+    # # u_mag = np.sqrt(u**2 + v**2)
+    # u_min, u_max = u_np.min(), u_np[:50].max()
+    # v_min, v_max = v_np.min(), v_np[:50].max()
+    # p_min, p_max = p_np[1:85 ,:].min(), p_np[1:85 ,:].max()
 
-    # Crea gli oggetti norm per fissare la scala dei colori
-    norm_u = mcolors.Normalize(vmin=u_min, vmax=u_max)
-    norm_v = mcolors.Normalize(vmin=v_min, vmax=v_max)
-    norm_p = mcolors.Normalize(vmin=p_min, vmax=p_max)
+    # # Crea gli oggetti norm per fissare la scala dei colori
+    # norm_u = mcolors.Normalize(vmin=u_min, vmax=u_max)
+    # norm_v = mcolors.Normalize(vmin=v_min, vmax=v_max)
+    # norm_p = mcolors.Normalize(vmin=p_min, vmax=p_max)
 
-    # Crea due ScalarMappable per le colorbar statiche
-    sm_u = ScalarMappable(cmap='jet', norm=norm_u)
-    sm_u.set_array([])
-    sm_v = ScalarMappable(cmap='jet', norm=norm_v)
-    sm_v.set_array([])
-    sm_p = ScalarMappable(cmap='jet', norm=norm_p)
-    sm_p.set_array([])
+    # # Crea due ScalarMappable per le colorbar statiche
+    # sm_u = ScalarMappable(cmap='jet', norm=norm_u)
+    # sm_u.set_array([])
+    # sm_v = ScalarMappable(cmap='jet', norm=norm_v)
+    # sm_v.set_array([])
+    # sm_p = ScalarMappable(cmap='jet', norm=norm_p)
+    # sm_p.set_array([])
 
-    # Imposta la figura con 2 sottotrame
-    scale = 2
-    nrows = 1
-    ncols = 2
+    # # Imposta la figura con 2 sottotrame
+    # scale = 2
+    # nrows = 1
+    # ncols = 2
 
-    inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
-    pinball_coords = nodes_list[np.where(np.array(markers)==obstacle_marker)[0].item()]
-    cyl1_coords = order_polygon(pinball_coords[np.where((pinball_coords[:, 0] - centers[0][0])**2 + (pinball_coords[:, 1] - centers[0][1])**2 <= (R + 1e-3)**2)])
-    cyl2_coords = order_polygon(pinball_coords[np.where((pinball_coords[:, 0] - centers[1][0])**2 + (pinball_coords[:, 1] - centers[1][1])**2 <= (R + 1e-3)**2)])
-    cyl3_coords = order_polygon(pinball_coords[np.where((pinball_coords[:, 0] - centers[2][0])**2 + (pinball_coords[:, 1] - centers[2][1])**2 <= (R + 1e-3)**2)])
-    cyl_coords = [cyl1_coords, cyl2_coords, cyl3_coords]
+    # inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
+    # pinball_coords = nodes_list[np.where(np.array(markers)==obstacle_marker)[0].item()]
+    # cyl1_coords = order_polygon(pinball_coords[np.where((pinball_coords[:, 0] - centers[0][0])**2 + (pinball_coords[:, 1] - centers[0][1])**2 <= (R + 1e-3)**2)])
+    # cyl2_coords = order_polygon(pinball_coords[np.where((pinball_coords[:, 0] - centers[1][0])**2 + (pinball_coords[:, 1] - centers[1][1])**2 <= (R + 1e-3)**2)])
+    # cyl3_coords = order_polygon(pinball_coords[np.where((pinball_coords[:, 0] - centers[2][0])**2 + (pinball_coords[:, 1] - centers[2][1])**2 <= (R + 1e-3)**2)])
+    # cyl_coords = [cyl1_coords, cyl2_coords, cyl3_coords]
 
-    fields_and_tiles = [
-                (u_np, "u"),
-                # (v_np, "v"),
-                # (p_np, "p")
-                ]
-    sm_list = [sm_u, sm_v, sm_p]
-    norm_list = [norm_u, norm_v, norm_p]
+    # fields_and_tiles = [
+    #             (u_np, "u"),
+    #             # (v_np, "v"),
+    #             # (p_np, "p")
+    #             ]
+    # sm_list = [sm_u, sm_v, sm_p]
+    # norm_list = [norm_u, norm_v, norm_p]
 
-    fig, axs = plt.subplots(1, len(fields_and_tiles))
-    # add_zoom(2.4)
+    # fig, axs = plt.subplots(1, len(fields_and_tiles))
+    # # add_zoom(2.4)
 
-    # add_zoom(2.4)
+    # # add_zoom(2.4)
 
-    if isinstance(axs, Axes):
-        axs = [axs]
+    # if isinstance(axs, Axes):
+    #     axs = [axs]
 
-    # plt.gcf().set_figheight(plt.gcf().get_figheight() * 0.3)
-    zoom = (len(axs) * 0.5 + 1)*1.7
-    plt.gcf().set_figheight(plt.gcf().get_figheight() * zoom * ((0.85)/len(axs) + 0.015 * len(axs)))
-    plt.gcf().set_figwidth(plt.gcf().get_figwidth() * zoom * 0.6)
+    # # plt.gcf().set_figheight(plt.gcf().get_figheight() * 0.3)
+    # zoom = (len(axs) * 0.5 + 1)*1.7
+    # plt.gcf().set_figheight(plt.gcf().get_figheight() * zoom * ((0.85)/len(axs) + 0.015 * len(axs)))
+    # plt.gcf().set_figwidth(plt.gcf().get_figwidth() * zoom * 0.6)
 
-    for i, (field, title) in enumerate(fields_and_tiles):
-        cbar_i = fig.colorbar(sm_list[i], ax=axs[i], orientation='horizontal',
-                              # pad = 0.08 + len(axs) * 0.025,
-                              pad = 0.1,
-                              aspect = 30, norm=norm_list[i],
-                              shrink=0.8)
-        axs[i].set_title(title)
+    # for i, (field, title) in enumerate(fields_and_tiles):
+    #     cbar_i = fig.colorbar(sm_list[i], ax=axs[i], orientation='horizontal',
+    #                           # pad = 0.08 + len(axs) * 0.025,
+    #                           pad = 0.1,
+    #                           aspect = 30, norm=norm_list[i],
+    #                           shrink=0.8)
+    #     axs[i].set_title(title)
 
-    # whichtimes = np.arange(0, ntimes, 10)
-    whichtimes = [ntimes-1]
-    # whichtimes = [-1]
-    for whichtime in whichtimes:
+    # # whichtimes = np.arange(0, ntimes, 10)
+    # whichtimes = [ntimes-1]
+    # # whichtimes = [-1]
+    # for whichtime in whichtimes:
 
-        for i, (field, _) in enumerate(fields_and_tiles):
+    #     for i, (field, _) in enumerate(fields_and_tiles):
 
-            cont = axs[i].tricontourf(triang, field[whichtime, :], cmap="jet", levels=200
-                                      # , norm=norm_list[i]
-                                      )
-            axs[i].set_aspect("equal")
+    #         cont = axs[i].tricontourf(triang, field[whichtime, :], cmap="jet", levels=200
+    #                                   # , norm=norm_list[i]
+    #                                   )
+    #         axs[i].set_aspect("equal")
 
-        for ax in axs:
-            for cyl in cyl_coords:
-                ax.fill(cyl[:, 0], cyl[:, 1],
-                                      facecolor='white',
-                                      edgecolor='white',
-                                      linewidth=1.5)
-        x_p, y_p = 0.4 * L, 0.5 * H # te per 30 gradi
-        dist = 5
-        plt.gca().set_xlim([x_p - dist, x_p + dist])
-        plt.gca().set_ylim([y_p - dist, y_p + dist])
+    #     for ax in axs:
+    #         for cyl in cyl_coords:
+    #             ax.fill(cyl[:, 0], cyl[:, 1],
+    #                                   facecolor='white',
+    #                                   edgecolor='white',
+    #                                   linewidth=1.5)
+    #     x_p, y_p = 0.4 * L, 0.5 * H # te per 30 gradi
+    #     dist = 5
+    #     plt.gca().set_xlim([x_p - dist, x_p + dist])
+    #     plt.gca().set_ylim([y_p - dist, y_p + dist])
 
-        # fig.subplots_adjust(top=2.95, bottom=0)
-        fig.suptitle(f"t={(whichtime*save_to_np_every_steps)/timesteps*T:.1f}s, Re={U_max * 2*R * rho_ / params[1][0]:.1f} ")
+    #     # fig.subplots_adjust(top=2.95, bottom=0)
+    #     fig.suptitle(f"t={(whichtime*save_to_np_every_steps)/timesteps*T:.1f}s, Re={U_max * 2*R * rho_ / params[1][0]:.1f} ")
 
-        display(fig)
-        plt.savefig(f"pinball_Re{Re}_t{(whichtime*save_to_np_every_steps)/timesteps*T:.1f}s.png")
-        plt.close(fig)
-        clc(wait=True)
+    #     display(fig)
+    #     plt.savefig(f"pinball_Re{Re}_t{(whichtime*save_to_np_every_steps)/timesteps*T:.1f}s.png")
+    #     plt.close(fig)
+    #     clc(wait=True)
 
-    last_contours = []
-    last_patches = []
+    # last_contours = []
+    # last_patches = []
 
-    # 2) Funzione di inizializzazione (vuota, serve se usi blit=True)
-    def init():
-        for ax in axs:
-            ax.clear()
-            ax.set_aspect("equal")
-        # ricrea le colorbar se necessario, oppure lasciale fisse come qui
-        return []
+    # # 2) Funzione di inizializzazione (vuota, serve se usi blit=True)
+    # def init():
+    #     for ax in axs:
+    #         ax.clear()
+    #         ax.set_aspect("equal")
+    #     # ricrea le colorbar se necessario, oppure lasciale fisse come qui
+    #     return []
 
-    # 2) Funzione di inizializzazione (vuota, serve se usi blit=True)
-    def update(frame):
+    # # 2) Funzione di inizializzazione (vuota, serve se usi blit=True)
+    # def update(frame):
 
-        for cs in last_contours:
-            cs.remove()
-        last_contours.clear()
+    #     for cs in last_contours:
+    #         cs.remove()
+    #     last_contours.clear()
 
-        # 2) Rimuovi le patch dei cilindri
-        for patch in last_patches:
-            patch.remove()
-        last_patches.clear()
+    #     # 2) Rimuovi le patch dei cilindri
+    #     for patch in last_patches:
+    #         patch.remove()
+    #     last_patches.clear()
 
-        conts = []
-        for i, (field, _) in enumerate(fields_and_tiles):
-            cont = axs[i].tricontourf(triang, field[frame, :], cmap="jet", levels=200
-                                      # , norm=norm_list[i]
-                                      )
-            axs[i].set_aspect("equal")
-            conts.append(cont)
+    #     conts = []
+    #     for i, (field, _) in enumerate(fields_and_tiles):
+    #         cont = axs[i].tricontourf(triang, field[frame, :], cmap="jet", levels=200
+    #                                   # , norm=norm_list[i]
+    #                                   )
+    #         axs[i].set_aspect("equal")
+    #         conts.append(cont)
 
-        last_contours.extend(conts)
+    #     last_contours.extend(conts)
 
-        for ax in axs:
-            for cyl in cyl_coords:
-                new_patches = ax.fill(cyl[:, 0], cyl[:, 1],
-                                      facecolor='white',
-                                      edgecolor='white',
-                                      linewidth=1.5)
-            # extend, not append
-            last_patches.extend(new_patches)
+    #     for ax in axs:
+    #         for cyl in cyl_coords:
+    #             new_patches = ax.fill(cyl[:, 0], cyl[:, 1],
+    #                                   facecolor='white',
+    #                                   edgecolor='white',
+    #                                   linewidth=1.5)
+    #         # extend, not append
+    #         last_patches.extend(new_patches)
 
-        x_p, y_p = 0.4 * L, 0.5 * H # te per 30 gradi
-        dist = 5
+    #     x_p, y_p = 0.4 * L, 0.5 * H # te per 30 gradi
+    #     dist = 5
 
-        for ax in axs:
-            ax.set_xlim([x_p - dist, x_p + dist])
-            ax.set_ylim([y_p - dist, y_p + dist])
-        # plt.gca().set_xlim([x_p - dist, x_p + dist])
-        # plt.gca().set_ylim([y_p - dist, y_p + dist])
+    #     for ax in axs:
+    #         ax.set_xlim([x_p - dist, x_p + dist])
+    #         ax.set_ylim([y_p - dist, y_p + dist])
+    #     # plt.gca().set_xlim([x_p - dist, x_p + dist])
+    #     # plt.gca().set_ylim([y_p - dist, y_p + dist])
 
-        # fig.subplots_adjust(top=2.95, bottom=0)
-        fig.suptitle(f"t={(frame*save_to_np_every_steps)/timesteps*T:.1f}s, Re={U_max * 2*R * rho_ / params[1][0]:.1f} ")
+    #     # fig.subplots_adjust(top=2.95, bottom=0)
+    #     fig.suptitle(f"t={(frame*save_to_np_every_steps)/timesteps*T:.1f}s, Re={U_max * 2*R * rho_ / params[1][0]:.1f} ")
 
-        return last_contours
+    #     return last_contours
 
-    # Costruiamo l'animazione
-    n_frames = ntimes
-    ani = FuncAnimation(
-        fig, update, frames=range(n_frames),
-        blit=True, interval=100
-    )
+    # # Costruiamo l'animazione
+    # n_frames = ntimes
+    # ani = FuncAnimation(
+    #     fig, update, frames=range(n_frames),
+    #     blit=True, interval=100
+    # )
 
-    # ani.save("animazione.mp4", writer="ffmpeg", fps=100)
+    # # ani.save("animazione.mp4", writer="ffmpeg", fps=100)
 
 
