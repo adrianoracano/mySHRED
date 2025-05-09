@@ -1,59 +1,12 @@
-# 
-use_dolfinx = True
-nprocs = 2
-
-### colab
-
-# 
-import os
-colab = os.getcwd() == "/content"
-
-
-if colab:
-    from google.colab import drive
-    drive.mount('/content/drive')
-
-# drive.flush_and_unmount()  # Smonta Google Drive
-# drive.mount('/content/drive', force_remount=True)  # Rimonta
-
-## Parallel programming imports
-import ipyparallel as ipp
+import dolfinx
+import gmsh
 from mpi4py import MPI
-
-os.environ["OMPI_ALLOW_RUN_AS_ROOT"] = "1"
-os.environ["OMPI_ALLOW_RUN_AS_ROOT_CONFIRM"] = "1"
-os.environ["OMP_NUM_THREADS"] = "48"     # un rank su 48 core (un socket)
-os.environ["MKL_NUM_THREADS"] = "48"     # se usi MKL per algebra lineare
-
-cluster = ipp.Cluster(
-    engines="mpi",
-    n=nprocs,
-    engine_launcher_args={
-        "mpirun_args": [
-            "--allow-run-as-root",         # già confermato con variabili ma non guasta
-            # "--use-hwthread-cpus"          # 1: conta gli hw threads come slot
-            "--bind-to", "socket",
-            "--map-by", "socket",
-            "--report-bindings"
-            # oppure: "--map-by", ":OVERSUBSCRIBE"
-        ]
-    }
-)
-rc = cluster.start_and_connect_sync()
-print("Engine MPI avviati correttamente!")
-
-
-### dolfinx
-
-
-use_dolfinx = True
-
 
 import os
 colab = os.getcwd() == "/content"
 
 ### import
-from __future__ import print_function
+
 
 import os
 import numpy as np
@@ -62,52 +15,50 @@ import matplotlib.pyplot as plt
 import sys
 import copy
 import tqdm.autonotebook
-if colab:
-    if use_dolfinx:
-        import gmsh
-        from mpi4py import MPI
-        from petsc4py import PETSc
 
-        from basix.ufl import element
+import gmsh
+from mpi4py import MPI
+from petsc4py import PETSc
 
-        from dolfinx.fem import (
-            Constant,
-            Function,
-            functionspace,
-            assemble_scalar,
-            dirichletbc,
-            form,
-            locate_dofs_topological,
-            locate_dofs_topological,
-            set_bc,
-        )
-        from dolfinx.fem.petsc import (
-            apply_lifting,
-            assemble_matrix,
-            assemble_vector,
-            create_vector,
-            create_matrix,
-            set_bc,
-        )
-        from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
-        from dolfinx.io import VTXWriter, gmshio
-        from ufl import (
-            FacetNormal,
-            Measure,
-            TestFunction,
-            TrialFunction,
-            as_vector,
-            div,
-            dot,
-            dx,
-            inner,
-            lhs,
-            grad,
-            nabla_grad,
-            rhs,
-        )
+from basix.ufl import element
 
-        gmsh.initialize()
+from dolfinx.fem import (
+    Constant,
+    Function,
+    functionspace,
+    assemble_scalar,
+    dirichletbc,
+    form,
+    locate_dofs_topological,
+    locate_dofs_topological,
+    set_bc,
+)
+from dolfinx.fem.petsc import (
+    apply_lifting,
+    assemble_matrix,
+    assemble_vector,
+    create_vector,
+    create_matrix,
+    set_bc,
+)
+from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
+from dolfinx.io import VTXWriter, gmshio
+from ufl import (
+    FacetNormal,
+    Measure,
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    div,
+    dot,
+    dx,
+    inner,
+    lhs,
+    grad,
+    nabla_grad,
+    rhs,
+)
+
 import pyDOE
 
 
@@ -115,21 +66,17 @@ from IPython.display import clear_output as clc
 
 plt.style.use("default")
 
-
-
-if colab:
-    if use_dolfinx:
-        import ufl
-        from basix.ufl import element, mixed_element
-        from dolfinx import fem, la
-        from dolfinx.fem import (Constant, Function, dirichletbc,
-                                extract_function_spaces, form, functionspace,
-                                locate_dofs_topological)
-        from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
-        from dolfinx.io import XDMFFile
-        from dolfinx.mesh import CellType, create_rectangle, locate_entities_boundary
-        from ufl import div, dx, grad, inner
-        from ufl import CellDiameter, sqrt, FacetArea
+import ufl
+from basix.ufl import element, mixed_element
+from dolfinx import fem, la
+from dolfinx.fem import (Constant, Function, dirichletbc,
+                        extract_function_spaces, form, functionspace,
+                        locate_dofs_topological)
+from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import CellType, create_rectangle, locate_entities_boundary
+from ufl import div, dx, grad, inner
+from ufl import CellDiameter, sqrt, FacetArea
 
 
 from scipy.interpolate import RBFInterpolator
@@ -658,10 +605,7 @@ def get_bcs(mesh, V, Q, ft, U_max, alpha, bcwalls="freeslip",mesh_type="rectangl
 
 #### solve
 
-
-if colab:
-    if use_dolfinx:
-        from dolfinx import default_real_type
+from dolfinx import default_real_type
 
 def domain_average(msh, v):
     """Compute the average of a function over the domain"""
@@ -799,8 +743,6 @@ def solve(params, mesh, facet_tags, dt, num_steps, U_max, rho_,
         pc1.setType(PETSc.PC.Type.HYPRE)
         pc1.setHYPREType("boomeramg")
         pc1.setReusePreconditioner(True)
-
-
 
         solver2 = PETSc.KSP().create(mesh.comm)
         solver2.setOperators(A2)
@@ -1023,6 +965,239 @@ def solve(params, mesh, facet_tags, dt, num_steps, U_max, rho_,
         return np.vstack(U_time_series), np.vstack(p_time_series)
     else:
         return None, None
+
+from mpi4py import MPI
+from dolfinx.fem import form, assemble_matrix, assemble_vector, create_matrix, create_vector
+from dolfinx.fem.petsc import (
+    assemble_matrix_block,
+    assemble_vector_block,
+    create_matrix_block,
+    create_vector_block,
+    set_bc_nest,
+)
+from petsc4py import PETSc
+import numpy as np
+import time
+from tqdm import tqdm
+
+def solve_fp(params, mesh, facet_tags, dt, num_steps, U_max, rho_,
+          mesh_type="rectangle",
+          bcwalls="freeslip", backflow=False,
+          save_to_np_every_steps=10, norm_check_every_steps=5,
+          direct_solver=True, monitor_solvers=False, monitor_time=False,
+          print_step=10):
+    comm = MPI.COMM_WORLD
+    rank = comm.rank
+
+    # Mesh type markers
+    if mesh_type == "rectangle":
+        inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
+    elif mesh_type == "cmesh":
+        obstacle_marker, farfield_marker = 1, 2
+    else:
+        obstacle_marker, farfield_marker = 3, 2
+
+    # Function spaces
+    v_cg2 = element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim,))
+    s_cg1 = element("Lagrange", mesh.topology.cell_name(), 1)
+    V = functionspace(mesh, v_cg2)
+    Q = functionspace(mesh, s_cg1)
+
+    # Auxiliary spaces for saving
+    elem_vectorial = element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    Q_vectorial = functionspace(mesh, elem_vectorial)
+
+    # Trial/Test functions
+    u, v = TrialFunction(V), TestFunction(V)
+    p, q = TrialFunction(Q), TestFunction(Q)
+
+    # Solutions
+    u_, u_s, u_n, u_n1 = Function(V), Function(V), Function(V), Function(V)
+    p_, phi = Function(Q), Function(Q)
+    u_.name, p_.name = "u", "p"
+
+    # BCs
+    bcu, bcp, u_inlet, inlet_velocity = get_bcs(
+        mesh, V, Q, facet_tags, U_max, 0.0, bcwalls, mesh_type=mesh_type
+    )
+
+    # Constants
+    k = Constant(mesh, PETSc.ScalarType(dt))
+    mu = Constant(mesh, PETSc.ScalarType(params[1][0]))
+    rho = Constant(mesh, PETSc.ScalarType(rho_))
+    f = Constant(mesh, PETSc.ScalarType((0, 0)))
+
+    # Variational forms
+    F1 = (
+        rho/k*dot(u-u_n, v)*dx
+        + inner(dot(1.5*u_n-0.5*u_n1, 0.5*nabla_grad(u+u_n)), v)*dx
+        + 0.5*mu*inner(grad(u+u_n), grad(v))*dx
+        - dot(p_, div(v))*dx
+        + dot(f, v)*dx
+    )
+    F2 = -rho/k * dot(div(u_s), q) * dx
+
+    # Create block system A = [[A11, A12], [A21, A22=0]] and b
+    a11 = form(lhs(F1)); L1 = form(rhs(F1))
+    a12 = form(-dot(p, div(v))*dx)  # pressure coupling in momentum
+    a21 = form(lhs(F2))           # continuity coupling
+    zero = form(Constant(mesh, PETSc.ScalarType((0)))*q*dx)
+
+    A_block = create_matrix_block([[a11, a12], [a21, zero]])
+    assemble_matrix_block(A_block, [[a11, a12], [a21, zero]], bcs=[[bcu, None], [None, bcp]])
+
+    b_block = create_vector_block([L1, form(Constant(mesh, PETSc.ScalarType((0)))*q*dx)])
+    assemble_vector_block(b_block, [L1, form(Constant(mesh, PETSc.ScalarType((0)))*q*dx)], [[bcu, None], [None, bcp]])
+
+    # Monolithic KSP + PCFIELDSPLIT
+    ksp = PETSc.KSP().create(comm)
+    ksp.setOperators(A_block)
+    ksp.setType(PETSc.KSP.Type.GMRES)
+    pc = ksp.getPC()
+    pc.setType(PETSc.PC.Type.FIELDSPLIT)
+    pc.setFieldSplitType(PETSc.PC.CompositeType.SCHUR)
+    pc.setFieldSplitSchurFactType(PETSc.PC.SchurFactType.FULL)
+
+    opts = PETSc.Options()
+    opts["pc_fieldsplit_0_pc_type"] = "hypre"
+    opts["pc_fieldsplit_0_pc_hypre_type"] = "boomeramg"
+    opts["pc_fieldsplit_1_ksp_type"] = "cg"
+    opts["pc_fieldsplit_1_pc_type"] = "hypre"
+    opts["pc_fieldsplit_1_pc_hypre_type"] = "boomeramg"
+    opts["pc_fieldsplit_schur_precondition"] = "pcd"
+    opts["pc_fieldsplit_schur_pcd_precond_type"] = "hypre"
+    opts["pc_fieldsplit_schur_pcd_mue"] = str(mu.value)
+    ksp.setFromOptions()
+
+    # Time-stepping loop
+    U_time_series = []
+    p_time_series = []
+    # progress = tqdm(total=num_steps)
+    t = 0.0
+    step_start = time.perf_counter()
+
+    threshold = 1000
+
+    for i in range(num_steps):
+        t += dt
+
+        if i%norm_check_every_steps==0:
+            # calcolo norme
+            u_norm = np.sqrt(
+                mesh_comm.allreduce(
+                    assemble_scalar(form((u_)**2 * dx)),
+                    MPI.SUM
+                )
+            )
+            # p_norm = np.sqrt(
+            #     mesh_comm.allreduce(
+            #         assemble_scalar(form((p_)**2 * dx)),
+            #         MPI.SUM
+            #     )
+            # )
+
+            # ——— controllo divergenza ———
+            if (u_norm > threshold):
+                # if rank == 0:
+                raise RuntimeError(
+                    f"Soluzione divergente a passo {i+1}, t={t:.3f}: "
+                    f"||u||_L2={u_norm:.3e}", #, ||p||_L2={p_norm:.3e}"
+                    )
+                # else:
+                #     # gli altri rank fanno abort
+                #     MPI.COMM_WORLD.Abort(1)
+
+
+         # Assemble & solve monolithic
+        assemble_matrix_block(A_block, [[a11, a12], [a21, zero]], bcs=[[bcu, None], [None, bcp]])
+        assemble_vector_block(b_block, [L1, form(0*q*dx)], [[bcu, None], [None, bcp]])
+        
+
+        # Solve monolithic system
+        start_solve = time.perf_counter()
+        ksp.solve(b_block, A_block.createVecRight())
+        elapsed_solve = time.perf_counter() - start_solve
+
+        if monitor_time and rank == 0:
+            print(f"[Step {i}] Monolithic solve: {elapsed_solve*1000:.2f} ms")
+
+        if i % save_to_np_every_steps == 0:
+            # --- Gather velocity on Q_vectorial (owned DOFs only), preserving both components ---
+            u_ns = Function(Q_vectorial)
+            u_ns.interpolate(u_)
+            arr_u = u_ns.x.array
+            im_u = Q_vectorial.dofmap.index_map
+            # reshape to (n_local, 2) so arr2[j] = [u_x, u_y]
+            arr2 = arr_u.reshape(-1, mesh.geometry.dim)
+            # select owned nodes
+            local_idxs = np.arange(im_u.size_local, dtype=np.int32)
+            owned = np.setdiff1d(local_idxs, im_u.ghosts, assume_unique=True)
+            vals2 = arr2[owned, :]        # shape (n_owned, 2)
+            vals_u = vals2.ravel()        # interleaved [u_x, u_y]
+            # gather across ranks
+            gathered_vals_u = comm.gather(vals_u, root=0)
+            gathered_gl_u   = comm.gather(im_u.local_to_global(owned), root=0)
+            if rank == 0:
+                Ug = np.zeros((1, im_u.size_global * mesh.geometry.dim), dtype=vals_u.dtype)
+                for vals, gl in zip(gathered_vals_u, gathered_gl_u):
+                    # gl is length n_owned, we must map interleaved
+                    for idx_local, gf in enumerate(gl):
+                        Ug[0, 2*gf    ] = vals[2*idx_local]
+                        Ug[0, 2*gf + 1] = vals[2*idx_local + 1]
+                U_time_series.append(Ug.ravel())
+
+
+            # --- Gather pressure on Q (owned DOFs only) ---
+            arr_p = p_.x.array # - domain_average(mesh, p_)
+            im_p = Q.dofmap.index_map
+            local_idxs_p = np.arange(im_p.size_local, dtype=np.int32)
+            owned_p = np.setdiff1d(local_idxs_p, im_p.ghosts, assume_unique=True)
+            vals_p = arr_p[owned_p]
+            gathered_vals_p = comm.gather(vals_p, root=0)
+            gathered_glp    = comm.gather(im_p.local_to_global(owned_p), root=0)
+            if rank == 0:
+                Pg = np.zeros((1, im_p.size_global), dtype=vals_p.dtype)
+                for vals, glp in zip(gathered_vals_p, gathered_glp):
+                    Pg[0, glp] = vals
+                p_time_series.append(Pg.ravel())
+
+
+        # Update variable with solution form this time step
+        start_update = time.perf_counter()
+        with (
+            u_.x.petsc_vec.localForm() as loc_,
+            u_n.x.petsc_vec.localForm() as loc_n,
+            u_n1.x.petsc_vec.localForm() as loc_n1,
+        ):
+            loc_n.copy(loc_n1)
+            loc_.copy(loc_n)
+
+        elapsed_update = time.perf_counter() - start_update
+        if monitor_time:
+            if rank==0:
+                print(f"[Step {i:4d}] State update: {elapsed_update*1000:.2f} ms")
+
+        
+        if i%print_step==0:
+            if rank==0:
+                step_end = time.perf_counter()
+                print(f'Step: {i}/{num_steps}, t:{t:.1f}", ||u||_L2: {u_norm:.1f}, elapsed time: {(step_end - step_start):.3f} s')
+                step_start = time.perf_counter()
+
+
+        # Post-processing, norms, saving, update states
+        if rank == 0 and i % print_step == 0:
+            step_end = time.perf_counter()
+            print(f"Step: {i}/{num_steps}, t:{t:.2f}, elapsed time: {step_end-step_start:.3f}s")
+            step_start = time.perf_counter()
+
+    if rank == 0:
+        return np.vstack(U_time_series), np.vstack(p_time_series)
+    else:
+        return None, None
+
+
+
 # Snapshots
 
 ### parameters
@@ -1109,7 +1284,7 @@ else:
     raise ValueError("Invalid mesh type.")
 
 partitioner = dolfinx.mesh.create_cell_partitioner(dolfinx.mesh.GhostMode.shared_facet)
-mesh, cell_tags, facet_tags = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2, partitioner=partitioner)
+mesh, cell_tags, facet_tags = dolfinx.io.gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2, partitioner=partitioner)
 ft = facet_tags
 mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
 mesh.topology.create_connectivity(mesh.topology.dim-2, mesh.topology.dim)
@@ -1166,7 +1341,7 @@ for i in range(1):
     mesh = interpolate_mesh(mesh, control_points, displacements, smooth=False, smooth_iters=15, smooth_omega=0.3)
     airfoil_coords = new_airfoil_coords
 
-    [U_np, p_np] = solve(params, mesh, ft, dt, timesteps+1, U_max, rho_,
+    [U_np, p_np] = solve_fp(params, mesh, ft, dt, timesteps+1, U_max, rho_,
                          mesh_type=mesh_type,
                          save_to_np_every_steps=save_to_np_every_steps,
                          bcwalls="freestream", backflow=False, direct_solver=False, monitor_solvers=True)
