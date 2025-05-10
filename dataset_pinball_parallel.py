@@ -860,17 +860,17 @@ timesteps = int(T/dt)
 rho_ = 1
 U_max = 3
 
-save_to_np_every_steps = 1
+save_to_np_every_steps = 5
 ntimes = timesteps // save_to_np_every_steps + 1 # initial condition
 
 
-ntrajectories = 10
-nparams = 5 # (alpha, mu, m, p, t)
+ntrajectories = 50
+nparams = 2 # (alpha, mu, m, p, t)
 # nvelocity = VectorFunctionSpace(mesh, "CG", 2).dim()
 # npressure = coords.shape[0]
 
 import pyDOE
-Reynolds_range = (50, 400)
+Reynolds_range = (50, 600)
 params_ph_range = [(-5.0, 5.0), tuple([(2*R * rho_ * U_max / Re_i) for Re_i in Reynolds_range]), ] # Physical parameters: angle of attack and viscosity
 params_range = params_ph_range
 
@@ -956,21 +956,21 @@ for i in range(ntrajectories):
         print(f"Re: {Re:.1f}")
 
 
-    # [U_np, p_np] = solve(params, mesh, ft, dt, timesteps+1, U_max, rho_,
-    #                      mesh_type="rectangle",
-    #                      save_to_np_every_steps=save_to_np_every_steps,
-    #                      bcwalls="freestream", backflow=False, direct_solver=False, monitor_solvers=False, monitor_time=False)
+    [U_np, p_np] = solve(params, mesh, ft, dt, timesteps+1, U_max, rho_,
+                         mesh_type="rectangle",
+                         save_to_np_every_steps=save_to_np_every_steps,
+                         bcwalls="freestream", backflow=False, direct_solver=False, monitor_solvers=False, monitor_time=False, print_step=100)
 
-    # if rank==0:
-    #     U_np = U_np.reshape((U_np.shape[0], -1, 2))
-    #     u_np, v_np = U_np[:,:,0], U_np[:,:,1]
+    if rank==0:
+        U_np = U_np.reshape((U_np.shape[0], -1, 2))
+        u_np, v_np = U_np[:,:,0], U_np[:,:,1]
 
-    #     U[i] = u_np
-    #     V[i] = v_np
-    #     P[i] = p_np
-    #     np.savez_compressed(f"snapshots_pinball/snapshot_{i}.npz", u_np = u_np, v_np = v_np, p_np = p_np, params = params)
+        U[i] = u_np
+        V[i] = v_np
+        P[i] = p_np
+        np.savez_compressed(f"snapshots_pinball/snapshot_{i}.npz", u_np = u_np, v_np = v_np, p_np = p_np, params = params)
 
-    # clc(wait = True)
+    clc(wait = True)
 
 print("Snapshots generated!")
 
